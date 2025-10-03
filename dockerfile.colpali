@@ -62,12 +62,15 @@ RUN --mount=type=cache,target=${UV_CACHE_DIR} \
     uv pip install fastapi uvicorn torch numpy pillow pydantic httpx ninja packaging
 
 # Install flash-attention-turing for Turing GPU support (T4, GTX 16xx, RTX 20xx)
-# Use --no-build-isolation to access already installed torch during build
+# NOTE: Compilation requires significant RAM (8GB+). If build fails with OOM:
+# - Comment out this section to use eager attention mode (30-50% slower but works)
+# - Or increase Docker memory limit in Docker Desktop settings
+# - Or build on machine with more RAM
 RUN --mount=type=cache,target=${UV_CACHE_DIR} \
     cd /tmp && \
     git clone https://github.com/ssiu/flash-attention-turing.git && \
     cd flash-attention-turing && \
-    uv pip install --no-build-isolation . && \
+    MAX_JOBS=2 uv pip install --no-build-isolation . && \
     cd /app && \
     rm -rf /tmp/flash-attention-turing
 
