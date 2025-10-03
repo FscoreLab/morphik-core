@@ -147,6 +147,29 @@ services:
       - morphik-network
     entrypoint: ["/ollama-entrypoint.sh"]
 
+  ui:
+    image: node:22-alpine
+    container_name: morphik-ui
+    # Enable this profile to run the Web UI
+    profiles:
+      - ui
+    working_dir: /app
+    command: sh -c "npm install && npm run build && npm start"
+    environment:
+      - NODE_ENV=production
+      - PORT=3003
+      - NEXT_PUBLIC_API_URL=http://localhost:8000
+    ports:
+      - "3003:3003"
+    volumes:
+      - ./ee/ui-component:/app
+      - ui_node_modules:/app/node_modules
+      - ui_next:/app/.next
+    depends_on:
+      - morphik
+    networks:
+      - morphik-network
+
 networks:
   morphik-network:
     driver: bridge
