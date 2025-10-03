@@ -62,10 +62,8 @@ RUN --mount=type=cache,target=${UV_CACHE_DIR} \
 RUN --mount=type=cache,target=${UV_CACHE_DIR} \
     uv pip install --verbose 'colpali-engine@git+https://github.com/illuin-tech/colpali@80fb72c9b827ecdb5687a3a8197077d0d01791b3'
 
-# Install setuptools and Flash Attention 2 for faster ColPali inference on CUDA
-RUN --mount=type=cache,target=${UV_CACHE_DIR} \
-    uv pip install --verbose setuptools wheel ninja && \
-    uv pip install --verbose flash-attn --no-build-isolation
+# Note: flash-attn requires CUDA toolkit for compilation, which is not available in base image
+# Using eager attention instead (30-50% slower but works fine)
 
 # Enable backports and install GCC 11+ for Debian Bookworm
 RUN echo "deb http://deb.debian.org/debian bookworm-backports main" > /etc/apt/sources.list.d/backports.list && \

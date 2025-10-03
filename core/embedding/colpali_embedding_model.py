@@ -26,7 +26,7 @@ class ColpaliEmbeddingModel(BaseEmbeddingModel):
             "tsystems/colqwen2.5-3b-multilingual-v1.0",
             torch_dtype=torch.bfloat16,
             device_map=device,  # Automatically detect and use available device
-            attn_implementation="flash_attention_2" if device == "cuda" else "eager",
+            attn_implementation="eager",  # Use eager (flash-attn requires CUDA toolkit to compile)
         ).eval()
         self.processor: ColQwen2_5_Processor = ColQwen2_5_Processor.from_pretrained(
             "tsystems/colqwen2.5-3b-multilingual-v1.0"
