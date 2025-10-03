@@ -1,0 +1,128 @@
+# syntax=docker/dockerfile:1
+
+# Purpose: Dedicated Docker image for ColPali Embedding Service with Flash Attention
+# This service uses NVIDIA CUDA base image and flash-attention-turing for 2x speedup on Turing GPUs
+# Compatible with: T4, GTX 16xx, RTX 20xx series
+# Memory efficient: Single model instance serves both main server and worker
+
+# Build stage - use NVIDIA CUDA image for compilation
+FROM nvidia/cuda:12.4.0-devel-ubuntu22.04 AS builder
+
+# Install Python 3.11
+RUN apt-get update && apt-get install -y \
+    python3.11 \
+    python3.11-dev \
+    python3.11-venv \
+    python3-pip \
+    gcc \
+    g++ \
+    cmake \
+    git \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# Make python3.11 the default
+RUN update-alternatives --install /usr/bin/python python /usr/bin/python3.11 1 && \
+    update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.11 1
+
+# Install uv
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
+
+# Set working directory
+WORKDIR /app
+
+# Set uv environment variables
+ENV UV_LINK_MODE=copy
+ENV UV_CACHE_DIR=/root/.cache/uv
+ENV VIRTUAL_ENV=/app/.venv
+ENV PATH="/app/.venv/bin:${PATH}"
+ENV CUDA_HOME=/usr/local/cuda
+
+# Create minimal pyproject.toml for ColPali dependencies
+RUN echo '[project]\n\
+name = "colpali-service"\n\
+version = "1.0.0"\n\
+requires-python = ">=3.11"\n\
+dependencies = [\n\
+    "fastapi>=0.115.12",\n\
+    "uvicorn>=0.34.0",\n\
+    "torch>=2.5.1",\n\
+    "numpy>=2.2.3",\n\
+    "pillow>=11.1.0",\n\
+    "pydantic>=2.11.1",\n\
+    "httpx>=0.28.1",\n\
+    "ninja>=1.11.1",\n\
+    "packaging>=24.0",\n\
+]\n\
+' > pyproject.toml
+
+# Create venv and install base dependencies
+RUN --mount=type=cache,target=${UV_CACHE_DIR} \
+    uv venv && \
+    uv pip install fastapi uvicorn torch numpy pillow pydantic httpx ninja packaging
+
+# Install flash-attention-turing for Turing GPU support (T4, GTX 16xx, RTX 20xx)
+RUN --mount=type=cache,target=${UV_CACHE_DIR} \
+    cd /tmp && \
+    git clone https://github.com/ssiu/flash-attention-turing.git && \
+    cd flash-attention-turing && \
+    /app/.venv/bin/pip install . && \
+    cd /app && \
+    rm -rf /tmp/flash-attention-turing
+
+# Install colpali-engine from git
+RUN --mount=type=cache,target=${UV_CACHE_DIR} \
+    uv pip install 'colpali-engine@git+https://github.com/illuin-tech/colpali@80fb72c9b827ecdb5687a3a8197077d0d01791b3'
+
+# Production stage - use NVIDIA CUDA runtime
+FROM nvidia/cuda:12.4.0-runtime-ubuntu22.04
+
+# Set working directory
+WORKDIR /app
+
+# Install Python 3.11 and runtime dependencies
+RUN apt-get update && apt-get install -y \
+    python3.11 \
+    python3.11-venv \
+    libsm6 \
+    libxext6 \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# Make python3.11 the default
+RUN update-alternatives --install /usr/bin/python python /usr/bin/python3.11 1 && \
+    update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.11 1
+
+# Copy the virtual environment from builder
+COPY --from=builder /app/.venv /app/.venv
+
+# Set environment variables
+ENV PYTHONUNBUFFERED=1
+ENV VIRTUAL_ENV=/app/.venv
+ENV PATH="/app/.venv/bin:${PATH}"
+ENV CUDA_HOME=/usr/local/cuda
+
+# Copy service code
+COPY colpali_service.py ./
+
+# Create startup script with health checks
+RUN echo '#!/bin/bash\n\
+set -e\n\
+\n\
+echo "Starting ColPali Embedding Service..."\n\
+\n\
+# Start the service\n\
+exec python colpali_service.py\n\
+' > /app/entrypoint.sh && chmod +x /app/entrypoint.sh
+
+# Labels
+LABEL org.opencontainers.image.title="ColPali Embedding Service"
+LABEL org.opencontainers.image.description="Dedicated microservice for ColPali embeddings"
+LABEL org.opencontainers.image.version="1.0.0"
+
+# Expose port
+EXPOSE 8001
+
+# Set entrypoint
+ENTRYPOINT ["/app/entrypoint.sh"]
+

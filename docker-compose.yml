@@ -46,17 +46,13 @@ services:
       ollama:
         condition: service_started
         required: false
+      colpali-service:
+        condition: service_started
+        required: false
     networks:
       - morphik-network
     env_file:
       - .env
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: all
-              capabilities: [gpu]
 
   worker:
     build:
@@ -86,16 +82,40 @@ services:
       ollama:
         condition: service_started
         required: false
+      colpali-service:
+        condition: service_started
+        required: false
     networks:
       - morphik-network
     env_file:
       - .env
+
+  colpali-service:
+    build:
+      context: .
+      dockerfile: dockerfile.colpali
+    ports:
+      - "8001:8001"
+    environment:
+      - COLPALI_PORT=8001
+      - COLPALI_HOST=0.0.0.0
+    volumes:
+      - huggingface_cache:/root/.cache/huggingface
+      - ./colpali_service.py:/app/colpali_service.py
+    networks:
+      - morphik-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
     deploy:
       resources:
         reservations:
           devices:
             - driver: nvidia
-              count: all
+              count: 1
               capabilities: [gpu]
 
   redis:
@@ -179,3 +199,5 @@ volumes:
   ollama_data:
   huggingface_cache:
   redis_data:
+  ui_node_modules:
+  ui_next:
