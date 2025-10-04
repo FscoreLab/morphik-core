@@ -72,9 +72,8 @@ RUN --mount=type=cache,target=${UV_CACHE_DIR} \
 RUN --mount=type=cache,target=${UV_CACHE_DIR} \
     uv pip install 'colpali-engine@git+https://github.com/illuin-tech/colpali@80fb72c9b827ecdb5687a3a8197077d0d01791b3'
 
-# Production stage - use NVIDIA CUDA devel for ABI compatibility with flash-attn
-# Note: Using devel instead of runtime to avoid ABI incompatibility issues
-FROM nvidia/cuda:12.4.0-devel-ubuntu22.04
+# Production stage - use NVIDIA CUDA runtime (pre-built wheel compatible with old ABI)
+FROM nvidia/cuda:12.4.0-runtime-ubuntu22.04
 
 # Set working directory
 WORKDIR /app

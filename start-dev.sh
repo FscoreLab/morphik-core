@@ -35,6 +35,7 @@ print_success "Updated port mapping to ${API_PORT}:${API_PORT}"
 
 # Start the services using the temporary compose file
 print_info "Starting Morphik development environment..."
+docker compose -f docker-compose.yml.tmp build
 docker compose -f docker-compose.yml.tmp up "$@"
 
 # Cleanup temporary file on exit
