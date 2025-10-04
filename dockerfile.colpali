@@ -1,8 +1,9 @@
 # syntax=docker/dockerfile:1
 
 # Purpose: Dedicated Docker image for ColPali Embedding Service with Flash Attention
-# This service uses NVIDIA CUDA base image and flash-attention-turing for 2x speedup on Turing GPUs
-# Compatible with: T4, GTX 16xx, RTX 20xx series
+# This service uses NVIDIA CUDA base image and flash-attn for 2x speedup on modern GPUs
+# Compatible with: Ampere (RTX 30xx/40xx, A100), Ada (RTX 40xx), Hopper (H100)
+# For Turing GPUs (T4, RTX 20xx) use flash-attention-turing instead
 # Memory efficient: Single model instance serves both main server and worker
 
 # Build stage - use NVIDIA CUDA image for compilation
@@ -61,18 +62,12 @@ RUN --mount=type=cache,target=${UV_CACHE_DIR} \
     uv venv && \
     uv pip install fastapi uvicorn torch numpy pillow pydantic httpx ninja packaging
 
-# Install flash-attention-turing for Turing GPU support (T4, GTX 16xx, RTX 20xx)
+# Install flash-attn for Ampere+ GPUs (RTX 30xx/40xx, A100, etc.)
 # NOTE: Compilation requires significant RAM (8GB+). If build fails with OOM:
-# - Comment out this section to use eager attention mode (30-50% slower but works)
-# - Or increase Docker memory limit in Docker Desktop settings
-# - Or build on machine with more RAM
+# - Reduce MAX_JOBS to 1 or comment out this section to use eager mode
+# - For Turing GPUs (T4, RTX 20xx) use flash-attention-turing instead
 RUN --mount=type=cache,target=${UV_CACHE_DIR} \
-    cd /tmp && \
-    git clone https://github.com/ssiu/flash-attention-turing.git && \
-    cd flash-attention-turing && \
-    MAX_JOBS=2 uv pip install --no-build-isolation . && \
-    cd /app && \
-    rm -rf /tmp/flash-attention-turing
+    MAX_JOBS=1 uv pip install flash-attn --no-build-isolation
 
 # Install colpali-engine from git
 RUN --mount=type=cache,target=${UV_CACHE_DIR} \

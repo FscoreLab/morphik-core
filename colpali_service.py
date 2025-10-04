@@ -83,17 +83,17 @@ async def startup_event():
         logger.info(f"GPU memory available: {gpu_memory:.2f} GB")
         logger.info(f"CUDA compute capability: {gpu_props.major}.{gpu_props.minor}")
 
-    # Load model with Flash Attention
-    logger.info("Loading ColQwen2.5-3B model with Flash Attention...")
+    # Load model with Flash Attention support
+    logger.info("Loading ColQwen2.5-3B model...")
     start_time = time.time()
 
     # Try flash_attention_2 first, fall back to eager if not available
     attn_implementation = "flash_attention_2"
     try:
-        import flash_attn_turing
-        logger.info("Flash Attention Turing detected - using optimized attention")
+        import flash_attn
+        logger.info("Flash Attention detected - using flash_attention_2")
     except ImportError:
-        logger.warning("Flash Attention Turing not found - falling back to eager mode")
+        logger.warning("Flash Attention not found - falling back to eager mode")
         attn_implementation = "eager"
 
     try:
