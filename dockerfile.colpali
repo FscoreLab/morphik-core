@@ -63,11 +63,10 @@ RUN --mount=type=cache,target=${UV_CACHE_DIR} \
     uv pip install fastapi uvicorn torch numpy pillow pydantic httpx ninja packaging
 
 # Install flash-attn for Ampere+ GPUs (RTX 30xx/40xx, A100, etc.)
-# NOTE: Compilation requires significant RAM (8GB+). If build fails with OOM:
-# - Reduce MAX_JOBS to 1 or comment out this section to use eager mode
-# - For Turing GPUs (T4, RTX 20xx) use flash-attention-turing instead
+# Using pre-built wheel to avoid compilation (faster and less memory intensive)
+# Wheel specs: CUDA 12, PyTorch 2.6, Python 3.11, cxx11abiFALSE (old ABI)
 RUN --mount=type=cache,target=${UV_CACHE_DIR} \
-    MAX_JOBS=1 uv pip install flash-attn --no-build-isolation
+    uv pip install https://github.com/Dao-AILab/flash-attention/releases/download/v2.8.3/flash_attn-2.8.3+cu12torch2.6cxx11abiFALSE-cp311-cp311-linux_x86_64.whl
 
 # Install colpali-engine from git
 RUN --mount=type=cache,target=${UV_CACHE_DIR} \
