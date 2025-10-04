@@ -63,8 +63,8 @@ RUN --mount=type=cache,target=${UV_CACHE_DIR} \
     uv pip install fastapi uvicorn torch numpy pillow pydantic httpx ninja packaging
 
 # Install flash-attn for Ampere+ GPUs (RTX 30xx/40xx, A100, etc.)
-# Using pre-built wheel to avoid compilation (faster and less memory intensive)
-# Wheel specs: CUDA 12, PyTorch 2.6, Python 3.11, cxx11abiFALSE (old ABI)
+# Using pre-built wheel to avoid compilation (faster and less memory intensive)  
+# Wheel specs: CUDA 12, PyTorch 2.6, Python 3.11, cxx11abiFALSE (old ABI - matches PyTorch 2.6.0+cu124)
 RUN --mount=type=cache,target=${UV_CACHE_DIR} \
     uv pip install https://github.com/Dao-AILab/flash-attention/releases/download/v2.8.3/flash_attn-2.8.3+cu12torch2.6cxx11abiFALSE-cp311-cp311-linux_x86_64.whl
 
@@ -72,8 +72,9 @@ RUN --mount=type=cache,target=${UV_CACHE_DIR} \
 RUN --mount=type=cache,target=${UV_CACHE_DIR} \
     uv pip install 'colpali-engine@git+https://github.com/illuin-tech/colpali@80fb72c9b827ecdb5687a3a8197077d0d01791b3'
 
-# Production stage - use NVIDIA CUDA runtime (pre-built wheel compatible with old ABI)
-FROM nvidia/cuda:12.4.0-runtime-ubuntu22.04
+# Production stage - use NVIDIA CUDA devel for full libstdc++ support
+# Note: devel image required for flash-attn old ABI compatibility (~2GB vs ~1GB runtime)
+FROM nvidia/cuda:12.4.0-devel-ubuntu22.04
 
 # Set working directory
 WORKDIR /app
