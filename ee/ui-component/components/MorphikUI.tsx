@@ -282,7 +282,7 @@ const MorphikUI: React.FC<MorphikUIProps> = props => {
         onSettingsTabChange={setActiveSettingsTab}
       />
     );
-    };
+  };
 
   const contentInner = (
     <PDFAPIService sessionId={sessionId} userId={userId}>
