@@ -260,35 +260,36 @@ const MorphikUI: React.FC<MorphikUIProps> = props => {
     onProfileNavigate,
     onUpgradeClick,
   }) => {
-    const { activeChatId, setActiveChatId, activeSettingsTab, setActiveSettingsTab } = useChatContext();
+      const { activeChatId, setActiveChatId, activeSettingsTab, setActiveSettingsTab } = useChatContext();
 
-    return (
-      <MorphikSidebarRemote
-        currentSection={currentSection}
-        onSectionChange={onSectionChange}
-        userProfile={userProfile}
-        onLogout={onLogout}
-        onProfileNavigate={onProfileNavigate}
-        onUpgradeClick={onUpgradeClick}
-        logoLight={logoLight}
-        logoDark={logoDark}
-        showChatView={showChatView}
-        onChatViewChange={onChatViewChange}
-        activeChatId={activeChatId}
-        onChatSelect={setActiveChatId}
-        showSettingsView={showSettingsView}
-        onSettingsViewChange={onSettingsViewChange}
-        activeSettingsTab={activeSettingsTab}
-        onSettingsTabChange={setActiveSettingsTab}
-      />
-    );
-  };
+      return (
+        <MorphikSidebarRemote
+          currentSection={currentSection}
+          onSectionChange={onSectionChange}
+          userProfile={userProfile}
+          onLogout={onLogout}
+          onProfileNavigate={onProfileNavigate}
+          onUpgradeClick={onUpgradeClick}
+          logoLight={logoLight}
+          logoDark={logoDark}
+          showChatView={showChatView}
+          onChatViewChange={onChatViewChange}
+          activeChatId={activeChatId}
+          onChatSelect={setActiveChatId}
+          showSettingsView={showSettingsView}
+          onSettingsViewChange={onSettingsViewChange}
+          activeSettingsTab={activeSettingsTab}
+          onSettingsTabChange={setActiveSettingsTab}
+        />
+      );
+    };
 
   const contentInner = (
     <PDFAPIService sessionId={sessionId} userId={userId}>
       <div className="min-h-screen bg-sidebar">
         <MorphikProvider
           connectionUri={connectionUri}
+          apiBaseUrl={effectiveApiBaseUrl}
           onBackClick={onBackClick}
           userProfile={userProfile}
           onLogout={onLogout}

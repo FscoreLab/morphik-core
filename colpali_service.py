@@ -23,13 +23,13 @@ from typing import List, Literal
 import numpy as np
 import torch
 import uvicorn
+
+# Import ColPali model and processor
+from colpali_engine.models import ColQwen2_5, ColQwen2_5_Processor
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import Response
 from PIL import Image
 from pydantic import BaseModel
-
-# Import ColPali model and processor
-from colpali_engine.models import ColQwen2_5, ColQwen2_5_Processor
 
 # Configure logging
 logging.basicConfig(
@@ -68,11 +68,7 @@ async def startup_event():
     logger.info("=" * 80)
 
     # Detect device
-    device = (
-        "mps"
-        if torch.backends.mps.is_available()
-        else "cuda" if torch.cuda.is_available() else "cpu"
-    )
+    device = "mps" if torch.backends.mps.is_available() else "cuda" if torch.cuda.is_available() else "cpu"
     logger.info(f"Device detected: {device}")
 
     # Check GPU memory and architecture if using CUDA
@@ -91,6 +87,7 @@ async def startup_event():
     attn_implementation = "flash_attention_2"
     try:
         import flash_attn
+
         logger.info("Flash Attention detected - using flash_attention_2")
     except ImportError:
         logger.warning("Flash Attention not found - falling back to eager mode")
@@ -104,9 +101,7 @@ async def startup_event():
             attn_implementation=attn_implementation,
         ).eval()
 
-        colpali_processor = ColQwen2_5_Processor.from_pretrained(
-            "tsystems/colqwen2.5-3b-multilingual-v1.0"
-        )
+        colpali_processor = ColQwen2_5_Processor.from_pretrained("tsystems/colqwen2.5-3b-multilingual-v1.0")
 
         attn_mode = attn_implementation  # Store for health endpoint
         load_time = time.time() - start_time
@@ -120,7 +115,7 @@ async def startup_event():
             reserved = torch.cuda.memory_reserved(0) / (1024**3)
             logger.info(f"GPU memory allocated: {allocated:.2f} GB")
             logger.info(f"GPU memory reserved: {reserved:.2f} GB")
-            
+
             # Performance expectations
             if attn_implementation == "flash_attention_2":
                 logger.info("🚀 Flash Attention enabled - expecting ~2x speedup for long sequences")
@@ -179,27 +174,49 @@ async def generate_embeddings(request: EmbeddingRequest):
                     images.append(image)
                 except Exception as e:
                     logger.error(f"Failed to decode image {idx}: {e}")
-                    raise HTTPException(
-                        status_code=400, detail=f"Invalid image at index {idx}"
-                    )
+                    raise HTTPException(status_code=400, detail=f"Invalid image at index {idx}")
 
-            # Process images
-            processed = colpali_processor.process_images(images).to(
-                colpali_model.device
-            )
+            # Process images in batches to avoid OOM
+            BATCH_SIZE = 1  # Process 1 page at a time for 12GB GPU (model takes ~11GB)
+            all_embeddings = []
+
+            for i in range(0, len(images), BATCH_SIZE):
+                # Aggressive memory cleanup before each batch
+                if torch.cuda.is_available():
+                    torch.cuda.empty_cache()
+                    torch.cuda.synchronize()
+
+                batch_images = images[i : i + BATCH_SIZE]
+                processed = colpali_processor.process_images(batch_images).to(colpali_model.device)
+
+                # Generate embeddings for this batch
+                with torch.no_grad():
+                    batch_embeddings = colpali_model(**processed)
+                    # Immediately move to CPU and convert to float32 to save GPU memory
+                    all_embeddings.append(batch_embeddings.to(torch.float32).cpu())
+
+                # Aggressive cleanup after batch
+                del processed, batch_embeddings
+                if torch.cuda.is_available():
+                    torch.cuda.empty_cache()
+                    torch.cuda.synchronize()
+
+            # Concatenate all batch embeddings (already in float32 on CPU)
+            embeddings = torch.cat(all_embeddings, dim=0)
 
         else:  # text
             # Process text queries
-            processed = colpali_processor.process_queries(inputs).to(
-                colpali_model.device
-            )
+            processed = colpali_processor.process_queries(inputs).to(colpali_model.device)
 
-        # Generate embeddings
-        with torch.no_grad():
-            embeddings = colpali_model(**processed)
+            # Generate embeddings
+            with torch.no_grad():
+                embeddings = colpali_model(**processed)
 
-        # Convert to float32 numpy arrays
-        embeddings_np = embeddings.to(torch.float32).cpu().numpy()
+            # Convert to float32 on CPU
+            embeddings = embeddings.to(torch.float32).cpu()
+
+        # Convert to numpy arrays
+        embeddings_np = embeddings.numpy()
 
         # Build .npz response
         npz_buffer = io.BytesIO()
@@ -216,14 +233,9 @@ async def generate_embeddings(request: EmbeddingRequest):
         npz_buffer.seek(0)
 
         elapsed = time.time() - start_time
-        logger.info(
-            f"Generated {count} {input_type} embeddings in {elapsed:.2f}s "
-            f"({elapsed/count:.3f}s per item)"
-        )
+        logger.info(f"Generated {count} {input_type} embeddings in {elapsed:.2f}s " f"({elapsed/count:.3f}s per item)")
 
-        return Response(
-            content=npz_buffer.read(), media_type="application/octet-stream"
-        )
+        return Response(content=npz_buffer.read(), media_type="application/octet-stream")
 
     except HTTPException:
         raise
@@ -259,4 +271,3 @@ if __name__ == "__main__":
         port=port,
         log_level="info",
     )
-

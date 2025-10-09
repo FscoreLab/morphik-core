@@ -99,6 +99,9 @@ RUN apt-get update && apt-get install -y \
     cmake \
     python3-dev \
     git \
+    libreoffice-writer \
+    libreoffice-calc \
+    libreoffice-impress \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy the virtual environment from the builder stage

@@ -294,16 +294,30 @@ async def download_document_file(document_id: str, auth: AuthContext = Depends(v
 
         # Create streaming response
 
+        from urllib.parse import quote
+
         from fastapi.responses import StreamingResponse
 
         def generate():
             yield file_content
 
+        # Encode filename for Content-Disposition header (RFC 5987)
+        # Use both ASCII fallback and UTF-8 encoded version for compatibility
+        filename = doc.filename or "document"
+        try:
+            # Try ASCII encoding (will fail for non-ASCII chars)
+            filename.encode("ascii")
+            content_disposition = f'inline; filename="{filename}"'
+        except UnicodeEncodeError:
+            # Use RFC 5987 encoding for non-ASCII characters
+            encoded_filename = quote(filename)
+            content_disposition = f"inline; filename=\"document\"; filename*=UTF-8''{encoded_filename}"
+
         return StreamingResponse(
             generate(),
             media_type=doc.content_type or "application/octet-stream",
             headers={
-                "Content-Disposition": f"inline; filename=\"{doc.filename or 'document'}\"",
+                "Content-Disposition": content_disposition,
                 "Content-Length": str(len(file_content)),
             },
         )

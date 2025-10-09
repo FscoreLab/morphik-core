@@ -30,6 +30,9 @@ services:
       - LOG_LEVEL=DEBUG
       - REDIS_HOST=redis
       - REDIS_PORT=6379
+      - JINA_AI_API_KEY=${JINA_AI_API_KEY}
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
+      - MORPHIK_EMBEDDING_API_KEY=local-dummy-key
     volumes:
       - ./storage:/app/storage
       - ./logs:/app/logs
@@ -66,6 +69,9 @@ services:
       - LOG_LEVEL=DEBUG
       - REDIS_HOST=redis
       - REDIS_PORT=6379
+      - JINA_AI_API_KEY=${JINA_AI_API_KEY}
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
+      - MORPHIK_EMBEDDING_API_KEY=local-dummy-key
     volumes:
       - ./storage:/app/storage
       - ./logs:/app/logs
@@ -174,11 +180,11 @@ services:
     profiles:
       - ui
     working_dir: /app
-    command: sh -c "npm install && npm run build && npm start"
+    command: sh -c "npm install && npm run build && npm start -- -H 0.0.0.0"
     environment:
       - NODE_ENV=production
       - PORT=3003
-      - NEXT_PUBLIC_API_URL=http://localhost:8000
+      - API_BASE_URL=${MORPHIK_API_BASE_URL:-http://localhost:8000}
     ports:
       - "3003:3003"
     volumes:

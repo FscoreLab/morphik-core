@@ -32,12 +32,15 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   const sidebarCookie = cookies().get("sidebar_state")?.value;
   const defaultOpen = sidebarCookie === undefined ? true : sidebarCookie === "true";
 
+  // Get API base URL from environment variable or use default
+  const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || process.env.API_BASE_URL || "http://localhost:8000";
+
   return (
     <html lang="en" suppressHydrationWarning>
       <body className={`${geistSans.variable} ${geistMono.variable} antialiased`}>
         <ThemeProvider attribute="class" defaultTheme="system" enableSystem disableTransitionOnChange>
           <div className="min-h-screen bg-sidebar">
-            <MorphikProvider>
+            <MorphikProvider apiBaseUrl={apiBaseUrl}>
               <HeaderProvider>
                 <ChatProvider>
                   <SidebarProvider

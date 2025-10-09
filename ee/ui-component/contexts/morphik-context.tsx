@@ -80,6 +80,7 @@ export function MorphikProvider({
   initialConnectionUri = null,
   isReadOnlyUri = false,
   connectionUri: externalConnectionUri,
+  apiBaseUrl: externalApiBaseUrl,
   onBackClick,
   userProfile,
   onLogout,
@@ -90,6 +91,7 @@ export function MorphikProvider({
   initialConnectionUri?: string | null;
   isReadOnlyUri?: boolean;
   connectionUri?: string | null;
+  apiBaseUrl?: string;
   onBackClick?: () => void;
   userProfile?: {
     name?: string;
@@ -125,11 +127,14 @@ export function MorphikProvider({
 
   // Ensure apiBaseUrl is always a valid HTTP(S) URL
   const apiBaseUrl = React.useMemo(() => {
-    if (!connectionInfo?.apiBaseUrl) {
+    // Priority: external apiBaseUrl > connectionInfo > default
+    let url = externalApiBaseUrl || connectionInfo?.apiBaseUrl || DEFAULT_API_BASE_URL;
+
+    if (!url) {
       return DEFAULT_API_BASE_URL;
     }
 
-    let url = connectionInfo.apiBaseUrl.trim();
+    url = url.trim();
 
     // Safety check: ensure it's a proper HTTP(S) URL
     if (!url.startsWith("http://") && !url.startsWith("https://")) {
@@ -149,7 +154,7 @@ export function MorphikProvider({
     }
 
     return url;
-  }, [connectionInfo]);
+  }, [connectionInfo, externalApiBaseUrl]);
 
   const isLocal = connectionInfo?.type === "local" || !connectionInfo;
 

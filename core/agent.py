@@ -425,7 +425,11 @@ when citing different sources. Use markdown formatting for text content to impro
 
                 # Return final content, tool history, display objects and sources
                 if display_mode == "formatted":
-                    display_objects = crop_images_in_display_objects(display_objects)
+                    try:
+                        display_objects = crop_images_in_display_objects(display_objects)
+                    except (ValueError, Exception) as e:
+                        # Skip image cropping if GEMINI_API_KEY is not available
+                        logger.warning(f"Skipping image cropping: {e}")
 
                 # Generate a user-friendly response text from display objects
                 response_text = ""
@@ -460,6 +464,8 @@ when citing different sources. Use markdown formatting for text content to impro
             messages.append(msg.to_dict(exclude_none=True))
 
             # Execute each tool call and add responses
+            tool_results_with_images = []  # Track which tool results contain images
+
             for call in msg.tool_calls:
                 name = call.function.name
                 args = json.loads(call.function.arguments)
@@ -476,7 +482,49 @@ when citing different sources. Use markdown formatting for text content to impro
                 content = [{"type": "text", "text": result}] if isinstance(result, str) else result
                 messages.append({"role": "tool", "name": name, "content": content, "tool_call_id": call.id})
 
+                # Check if this tool result contains images
+                if isinstance(content, list):
+                    has_images = any(item.get("type") == "image_url" for item in content if isinstance(item, dict))
+                    if has_images:
+                        tool_results_with_images.append({"name": name, "content": content})
+
             logger.info("Added all tool results to conversation, continuing...")
+
+            # If any tool results contained images, add a synthetic user message with multimodal content
+            # This is necessary because most LLMs only process images in user/assistant messages, not tool
+            if tool_results_with_images:
+                logger.info(
+                    f"Found {len(tool_results_with_images)} tool results with images, "
+                    f"creating synthetic user message"
+                )
+
+                # Aggregate all multimodal content
+                multimodal_content = [
+                    {
+                        "type": "text",
+                        "text": (
+                            "Here are the retrieved documents and images from the tools. "
+                            "Please analyze this content to answer the user's question:"
+                        ),
+                    }
+                ]
+
+                for tool_result in tool_results_with_images:
+                    # Add a separator for each tool
+                    multimodal_content.append({"type": "text", "text": f"\n--- Content from {tool_result['name']} ---"})
+
+                    # Add all content items (text and images)
+                    for item in tool_result["content"]:
+                        if isinstance(item, dict):
+                            # Include both text and image_url items
+                            if item.get("type") in ["text", "image_url"]:
+                                multimodal_content.append(item)
+
+                # Add the synthetic user message
+                messages.append({"role": "user", "content": multimodal_content})
+                logger.info(
+                    f"Added synthetic user message with {len(multimodal_content)} " f"content items (including images)"
+                )
 
     def stream(self, query: str):
         """
