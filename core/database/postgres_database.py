@@ -1994,7 +1994,7 @@ class PostgresDatabase(BaseDatabase):
     ) -> bool:
         """Store or update chat history."""
         try:
-            now = datetime.now(UTC).isoformat()
+            now = datetime.now(UTC)
 
             # Auto-generate title from first user message if not provided
             if title is None and history:

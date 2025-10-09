@@ -1,10 +1,13 @@
+import base64
+import io
 import json
 import logging
 import os
 
 from dotenv import load_dotenv
 from litellm import acompletion
-from litellm.exceptions import ContextWindowExceededError
+from litellm.exceptions import APIConnectionError, ContextWindowExceededError, ServiceUnavailableError
+from PIL import Image
 
 from core.config import get_settings
 from core.models.auth import AuthContext
@@ -26,6 +29,69 @@ logger = logging.getLogger(__name__)
 def _truncate_for_log(obj, limit=100):
     s = str(obj)
     return s if len(s) <= limit else s[:limit] + "...(truncated)"
+
+
+def _compress_image_base64(image_data_url: str, max_size: int = 1024, quality: int = 80) -> str:
+    """
+    Compress a base64 encoded image to reduce payload size.
+
+    Args:
+        image_data_url: Data URL or base64 string (with or without data: prefix)
+        max_size: Maximum dimension (width or height) in pixels
+        quality: JPEG quality (1-100)
+
+    Returns:
+        Compressed image as data URL
+    """
+    try:
+        # Extract base64 data
+        if image_data_url.startswith("data:"):
+            # Format: data:image/png;base64,iVBORw0KG...
+            base64_data = image_data_url.split(",", 1)[1]
+        else:
+            base64_data = image_data_url
+
+        # Decode base64 to bytes
+        image_bytes = base64.b64decode(base64_data)
+        original_size = len(image_bytes) / 1024 / 1024  # MB
+
+        # Open image with PIL
+        image = Image.open(io.BytesIO(image_bytes))
+
+        # Convert RGBA to RGB if needed (for JPEG compatibility)
+        if image.mode in ("RGBA", "LA", "P"):
+            background = Image.new("RGB", image.size, (255, 255, 255))
+            if image.mode == "P":
+                image = image.convert("RGBA")
+            background.paste(image, mask=image.split()[-1] if image.mode in ("RGBA", "LA") else None)
+            image = background
+
+        # Resize if larger than max_size
+        if max(image.size) > max_size:
+            ratio = max_size / max(image.size)
+            new_size = tuple(int(dim * ratio) for dim in image.size)
+            image = image.resize(new_size, Image.Resampling.LANCZOS)
+
+        # Save as JPEG with specified quality
+        output = io.BytesIO()
+        image.save(output, format="JPEG", quality=quality, optimize=True)
+        compressed_bytes = output.getvalue()
+        compressed_size = len(compressed_bytes) / 1024 / 1024  # MB
+
+        # Encode back to base64
+        compressed_base64 = base64.b64encode(compressed_bytes).decode("utf-8")
+        compressed_data_url = f"data:image/jpeg;base64,{compressed_base64}"
+
+        logger.info(
+            f"Image compressed: {original_size:.2f}MB -> {compressed_size:.2f}MB "
+            f"(ratio: {compressed_size/original_size:.1%})"
+        )
+
+        return compressed_data_url
+
+    except Exception as e:
+        logger.warning(f"Failed to compress image: {e}, returning original")
+        return image_data_url
 
 
 # Load environment variables
@@ -245,6 +311,9 @@ when citing different sources. Use markdown formatting for text content to impro
             "messages": messages,
             "tools": self.tool_definitions,
             "tool_choice": "auto",
+            # Retry configuration for resilience
+            "num_retries": 3,  # Retry up to 3 times
+            "timeout": 30,  # 30 seconds timeout per request
         }
 
         # Add any other parameters from model config
@@ -254,8 +323,36 @@ when citing different sources. Use markdown formatting for text content to impro
 
         while True:
             logger.info(f"Sending completion request with {len(messages)} messages")
+            # Log message sizes for debugging
+            total_size = 0
+            for i, msg in enumerate(messages):
+                msg_str = str(msg)
+                msg_size = len(msg_str) / 1024  # KB
+                total_size += msg_size
+                logger.info(f"Message {i}: role={msg.get('role', 'unknown')}, size={msg_size:.1f}KB")
+            logger.info(f"Total payload size: {total_size:.1f}KB ({total_size/1024:.2f}MB)")
+
             try:
                 resp = await acompletion(**model_params)
+            except (ServiceUnavailableError, APIConnectionError) as e:
+                logger.error(
+                    f"LLM service temporarily unavailable: {str(e)[:200]}. "
+                    f"LiteLLM will retry automatically (num_retries={model_params.get('num_retries', 0)})"
+                )
+                # Re-raise to let LiteLLM handle retries
+                raise
+            except AttributeError as e:
+                # LiteLLM bug: sometimes it fails to handle exceptions properly
+                logger.error(
+                    f"LiteLLM internal error (AttributeError): {str(e)[:500]}. "
+                    f"This is likely a bug in LiteLLM's exception handling. "
+                    f"Check the logs above for the actual API error."
+                )
+                # Try to extract useful information from the error
+                import traceback
+
+                logger.error(f"Full traceback:\n{traceback.format_exc()}")
+                raise RuntimeError(f"LLM request failed due to LiteLLM internal error. Original error: {str(e)[:200]}")
             except ContextWindowExceededError as e:
                 logger.info("Context window exceeded, truncating messages")
                 # Save messages to JSON for debugging or analysis
@@ -480,13 +577,31 @@ when citing different sources. Use markdown formatting for text content to impro
 
                 # Append raw tool output (string or structured data)
                 content = [{"type": "text", "text": result}] if isinstance(result, str) else result
-                messages.append({"role": "tool", "name": name, "content": content, "tool_call_id": call.id})
 
-                # Check if this tool result contains images
+                # Check if this tool result contains images BEFORE adding to messages
                 if isinstance(content, list):
                     has_images = any(item.get("type") == "image_url" for item in content if isinstance(item, dict))
                     if has_images:
+                        # Save full content with images for synthetic user message
                         tool_results_with_images.append({"name": name, "content": content})
+
+                        # Remove images from tool message to save payload space
+                        # LLMs can't read images from tool messages anyway
+                        content_without_images = [
+                            item for item in content if not (isinstance(item, dict) and item.get("type") == "image_url")
+                        ]
+                        messages.append(
+                            {"role": "tool", "name": name, "content": content_without_images, "tool_call_id": call.id}
+                        )
+                        logger.info(
+                            f"Removed {len(content) - len(content_without_images)} images from tool message (will add to synthetic user message)"
+                        )
+                    else:
+                        # No images, add as is
+                        messages.append({"role": "tool", "name": name, "content": content, "tool_call_id": call.id})
+                else:
+                    # String content, add as is
+                    messages.append({"role": "tool", "name": name, "content": content, "tool_call_id": call.id})
 
             logger.info("Added all tool results to conversation, continuing...")
 
@@ -513,17 +628,39 @@ when citing different sources. Use markdown formatting for text content to impro
                     # Add a separator for each tool
                     multimodal_content.append({"type": "text", "text": f"\n--- Content from {tool_result['name']} ---"})
 
-                    # Add all content items (text and images)
+                    # Add all content items (text and images) - compress images to reduce payload
                     for item in tool_result["content"]:
                         if isinstance(item, dict):
-                            # Include both text and image_url items
-                            if item.get("type") in ["text", "image_url"]:
+                            if item.get("type") == "text":
                                 multimodal_content.append(item)
+                            elif item.get("type") == "image_url":
+                                # Compress image before adding to reduce payload size
+                                image_url = item.get("image_url", {})
+                                if isinstance(image_url, dict):
+                                    original_url = image_url.get("url", "")
+                                else:
+                                    original_url = image_url
+
+                                if original_url:
+                                    # Use higher quality compression to ensure LLM can read the images
+                                    compressed_url = _compress_image_base64(original_url, max_size=1536, quality=90)
+                                    multimodal_content.append(
+                                        {"type": "image_url", "image_url": {"url": compressed_url}}
+                                    )
 
                 # Add the synthetic user message
                 messages.append({"role": "user", "content": multimodal_content})
                 logger.info(
                     f"Added synthetic user message with {len(multimodal_content)} " f"content items (including images)"
+                )
+
+                # Increase timeout for image-heavy requests
+                # Large images can take 60-120s to process
+                original_timeout = model_params.get("timeout", 30)
+                model_params["timeout"] = max(60, original_timeout)
+                logger.info(
+                    f"Increased timeout from {original_timeout}s to {model_params['timeout']}s "
+                    f"for multimodal request"
                 )
 
     def stream(self, query: str):
