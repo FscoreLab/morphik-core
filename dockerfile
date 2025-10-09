@@ -44,13 +44,23 @@ COPY fde ./fde
 RUN --mount=type=cache,target=${UV_CACHE_DIR} \
     uv sync --verbose --locked --no-install-project
 
-# Install additional packages as requested (BEFORE copying code for better caching)
+# Copy the rest of the application code
+# Assuming start_server.py is at the root or handled by pyproject.toml structure.
+COPY . .
+
+# Copy the UI component (including it in the image for optional use)
+# This ensures the UI is available when users want to enable it
+COPY ee/ui-component /app/ee/ui-component
+
+# Install the project itself into the venv in non-editable mode
+# Cache buster: 1 - verbose flag added
+RUN --mount=type=cache,target=${UV_CACHE_DIR} \
+    uv sync --verbose --locked --no-editable
+
+# Install additional packages as requested
 # Cache buster: 1 - verbose flag added
 RUN --mount=type=cache,target=${UV_CACHE_DIR} \
     uv pip install --verbose 'colpali-engine@git+https://github.com/illuin-tech/colpali@80fb72c9b827ecdb5687a3a8197077d0d01791b3'
-
-# Note: flash-attn requires CUDA toolkit for compilation, which is not available in base image
-# Using eager attention instead (30-50% slower but works fine)
 
 # Enable backports and install GCC 11+ for Debian Bookworm
 RUN echo "deb http://deb.debian.org/debian bookworm-backports main" > /etc/apt/sources.list.d/backports.list && \
@@ -65,19 +75,6 @@ RUN --mount=type=cache,target=${UV_CACHE_DIR} \
 
 # Download NLTK data
 RUN python -m nltk.downloader -d /usr/local/share/nltk_data punkt averaged_perceptron_tagger
-
-# Copy the rest of the application code (AFTER installing heavy dependencies for faster rebuilds)
-# Assuming start_server.py is at the root or handled by pyproject.toml structure.
-COPY . .
-
-# Copy the UI component (including it in the image for optional use)
-# This ensures the UI is available when users want to enable it
-COPY ee/ui-component /app/ee/ui-component
-
-# Install the project itself into the venv in non-editable mode
-# Cache buster: 1 - verbose flag added
-RUN --mount=type=cache,target=${UV_CACHE_DIR} \
-    uv sync --verbose --locked --no-editable
 
 # Production stage
 FROM python:3.11.12-slim
@@ -99,9 +96,6 @@ RUN apt-get update && apt-get install -y \
     cmake \
     python3-dev \
     git \
-    libreoffice-writer \
-    libreoffice-calc \
-    libreoffice-impress \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy the virtual environment from the builder stage
