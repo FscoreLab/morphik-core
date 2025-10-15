@@ -201,8 +201,9 @@ async def generate_embeddings(request: EmbeddingRequest):
                     torch.cuda.empty_cache()
                     torch.cuda.synchronize()
 
-            # Concatenate all batch embeddings (already in float32 on CPU)
-            embeddings = torch.cat(all_embeddings, dim=0)
+            # Keep embeddings as list - no need to concatenate since they may have different sizes
+            # (different number of patches per image)
+            embeddings_list = all_embeddings
 
         else:  # text
             # Process text queries
@@ -215,8 +216,8 @@ async def generate_embeddings(request: EmbeddingRequest):
             # Convert to float32 on CPU
             embeddings = embeddings.to(torch.float32).cpu()
 
-        # Convert to numpy arrays
-        embeddings_np = embeddings.numpy()
+            # Convert to list for uniform handling
+            embeddings_list = [embeddings[i] for i in range(len(embeddings))]
 
         # Build .npz response
         npz_buffer = io.BytesIO()
@@ -225,9 +226,9 @@ async def generate_embeddings(request: EmbeddingRequest):
             "input_type": np.array(input_type),
         }
 
-        # Add individual embeddings
-        for i in range(count):
-            npz_dict[f"emb_{i}"] = embeddings_np[i]
+        # Add individual embeddings - handle varying sizes gracefully
+        for i, emb in enumerate(embeddings_list):
+            npz_dict[f"emb_{i}"] = emb.numpy()
 
         np.savez(npz_buffer, **npz_dict)
         npz_buffer.seek(0)
