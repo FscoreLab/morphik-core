@@ -228,7 +228,11 @@ async def generate_embeddings(request: EmbeddingRequest):
 
         # Add individual embeddings - handle varying sizes gracefully
         for i, emb in enumerate(embeddings_list):
-            npz_dict[f"emb_{i}"] = emb.numpy()
+            # Remove batch dimension if present (shape [1, patches, dim] -> [patches, dim])
+            emb_np = emb.numpy()
+            if emb_np.ndim == 3 and emb_np.shape[0] == 1:
+                emb_np = emb_np[0]
+            npz_dict[f"emb_{i}"] = emb_np
 
         np.savez(npz_buffer, **npz_dict)
         npz_buffer.seek(0)
