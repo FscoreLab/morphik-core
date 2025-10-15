@@ -307,7 +307,19 @@ class MorphikParser(BaseParser):
         return chunks, len(file)
 
     async def _parse_document(self, file: bytes, filename: str) -> Tuple[Dict[str, Any], str]:
-        """Parse document using unstructured"""
+        """Parse document using lightweight parsers first, then fallback to unstructured"""
+        
+        # Try lightweight parsers first for supported formats (XLSX, DOCX, PPTX)
+        from core.parser.lightweight_parser import extract_text_lightweight
+        
+        text, success = extract_text_lightweight(file, filename)
+        if success:
+            self.logger.info(f"Successfully extracted text using lightweight parser for {filename}")
+            return {}, text
+        
+        # Fallback to unstructured for other formats or if lightweight parsing failed
+        self.logger.debug(f"Using unstructured parser for {filename}")
+        
         # Choose a lighter parsing strategy for text-based files. Using
         # `hi_res` on plain PDFs/Word docs invokes OCR which can be 20-30×
         # slower.  A simple extension check covers the majority of cases.
@@ -322,6 +334,12 @@ class MorphikParser(BaseParser):
         elif filename.lower().endswith(".json"):
             strategy = "fast"  # or can be omitted if it doesn't apply to json
             file_content_type = "application/json"  # Explicitly set for .json files
+        elif filename.lower().endswith(".xlsx"):
+            strategy = "fast"
+            file_content_type = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        elif filename.lower().endswith(".xls"):
+            strategy = "fast"
+            file_content_type = "application/vnd.ms-excel"
 
         elements = partition(
             file=io.BytesIO(file),
