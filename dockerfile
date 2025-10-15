@@ -42,7 +42,7 @@ COPY fde ./fde
 # This also creates the /app/.venv directory
 # Cache buster: 1 - verbose flag added
 RUN --mount=type=cache,target=${UV_CACHE_DIR} \
-    uv sync --verbose --locked --no-install-project
+    uv sync --verbose --no-install-project
 
 # Copy the rest of the application code
 # Assuming start_server.py is at the root or handled by pyproject.toml structure.
@@ -55,7 +55,7 @@ COPY ee/ui-component /app/ee/ui-component
 # Install the project itself into the venv in non-editable mode
 # Cache buster: 1 - verbose flag added
 RUN --mount=type=cache,target=${UV_CACHE_DIR} \
-    uv sync --verbose --locked --no-editable
+    uv sync --verbose --no-editable
 
 # Install additional packages as requested
 # Cache buster: 1 - verbose flag added
