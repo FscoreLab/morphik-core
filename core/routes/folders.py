@@ -221,7 +221,7 @@ async def add_document_to_folder(
         if not success:
             raise HTTPException(status_code=500, detail="Failed to add document to folder")
 
-        return {"status": "success"}
+        return {"status": "success", "message": f"Successfully added document {document_id} to folder {folder_id}"}
     except Exception as e:
         logger.error(f"Error adding document to folder: {e}")
         raise HTTPException(status_code=500, detail=str(e))
